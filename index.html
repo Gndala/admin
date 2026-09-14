@@ -243,6 +243,14 @@
 
     <div class="card">
       <div class="card-top">
+        <h2>🏷️ ملاك أم عقد</h2>
+        <button class="chip-btn primary" id="showAllEmploymentTeachers">عرض الكل</button>
+      </div>
+      <div id="teacherEmploymentGrid"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
         <h2 id="teachersTitle">👨‍🏫 بيانات المدرسين والكادر</h2>
         <div class="actions">
           <button class="chip-btn" id="refreshTeachers">تحديث</button>
@@ -253,10 +261,18 @@
       <div class="search-box">
         <input type="text" id="searchTeachers" placeholder="🔍 ابحث بالاسم، الرقم الوظيفي، الهاتف...">
       </div>
+      <div class="actions" style="margin-bottom:10px;">
+        <select class="chip-btn" id="sortTeachers" style="cursor:pointer;">
+          <option value="oldest">📅 من الأقدم إلى الأحدث</option>
+          <option value="newest">📅 من الأحدث إلى الأقدم</option>
+        </select>
+        <button class="chip-btn danger" id="bulkDeleteTeachers" disabled>🗑 حذف المحدد (<span id="teacherSelCount">0</span>)</button>
+      </div>
       <div class="table-wrap">
         <table id="teachersTable">
           <thead>
             <tr>
+              <th><input type="checkbox" id="selectAllTeachers"></th>
               <th>الصورة</th>
               <th>الاسم الرباعي</th>
               <th>التصنيف</th>
@@ -270,6 +286,7 @@
         </table>
       </div>
     </div>
+
   </div>
 
   <!-- Students panel -->
@@ -294,10 +311,18 @@
       <div class="search-box">
         <input type="text" id="searchStudents" placeholder="🔍 ابحث بالاسم، اللقب، هاتف الأب...">
       </div>
+      <div class="actions" style="margin-bottom:10px;">
+        <select class="chip-btn" id="sortStudents" style="cursor:pointer;">
+          <option value="oldest">📅 من الأقدم إلى الأحدث</option>
+          <option value="newest">📅 من الأحدث إلى الأقدم</option>
+        </select>
+        <button class="chip-btn danger" id="bulkDeleteStudents" disabled>🗑 حذف المحدد (<span id="studentSelCount">0</span>)</button>
+      </div>
       <div class="table-wrap">
         <table id="studentsTable">
           <thead>
             <tr>
+              <th><input type="checkbox" id="selectAllStudents"></th>
               <th>الصورة</th>
               <th>اسم الطالب الكامل</th>
               <th>اللقب</th>
@@ -486,11 +511,109 @@ document.getElementById('showAllTeachers').addEventListener('click', () => {
   renderTeachersTable();
 });
 
+/* Employment type (ملاك/عقد) distribution + filter */
+const teacherEmploymentGrid = document.getElementById('teacherEmploymentGrid');
+let activeEmploymentFilter = null;
+
+function renderTeacherEmploymentDistribution(){
+  const counts = { 'ملاك':0, 'عقد':0, 'غير محدد':0 };
+  allTeachers.forEach(t => {
+    const e = t.employmentType || '';
+    if (e === 'ملاك' || e === 'عقد') counts[e]++;
+    else counts['غير محدد']++;
+  });
+
+  teacherEmploymentGrid.innerHTML = Object.entries(counts)
+    .filter(([k,v]) => k !== 'غير محدد' || v > 0)
+    .map(([k,v]) => {
+      const isActive = activeEmploymentFilter === k;
+      return `
+        <div class="dist-card ${isActive ? 'active' : ''}" data-employment="${esc(k)}">
+          <div class="dist-label">${esc(k)}</div>
+          <div class="dist-count">${v}</div>
+        </div>`;
+    }).join('');
+
+  teacherEmploymentGrid.querySelectorAll('.dist-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const k = card.dataset.employment;
+      activeEmploymentFilter = (activeEmploymentFilter === k) ? null : k;
+      renderTeacherEmploymentDistribution();
+      renderTeachersTable();
+    });
+  });
+}
+
+document.getElementById('showAllEmploymentTeachers').addEventListener('click', () => {
+  activeEmploymentFilter = null;
+  renderTeacherEmploymentDistribution();
+  renderTeachersTable();
+});
+
+/* Sorting */
+const sortTeachers = document.getElementById('sortTeachers');
+sortTeachers.addEventListener('change', renderTeachersTable);
+
+function getTime(t){
+  return t.createdAt && t.createdAt.toDate ? t.createdAt.toDate().getTime() : 0;
+}
+
+/* Bulk selection */
+let selectedTeacherIds = new Set();
+const selectAllTeachers = document.getElementById('selectAllTeachers');
+const bulkDeleteTeachers = document.getElementById('bulkDeleteTeachers');
+
+function resetTeacherBulkDeleteBtn(){
+  bulkDeleteTeachers.innerHTML = '🗑 حذف المحدد (<span id="teacherSelCount">' + selectedTeacherIds.size + '</span>)';
+  bulkDeleteTeachers.disabled = selectedTeacherIds.size === 0;
+}
+
+function updateTeacherBulkUI(){
+  const countEl = document.getElementById('teacherSelCount');
+  if (countEl) countEl.textContent = selectedTeacherIds.size;
+  bulkDeleteTeachers.disabled = selectedTeacherIds.size === 0;
+}
+
+selectAllTeachers.addEventListener('change', () => {
+  teachersBody.querySelectorAll('.row-check').forEach(cb => {
+    cb.checked = selectAllTeachers.checked;
+    if (selectAllTeachers.checked) selectedTeacherIds.add(cb.dataset.id);
+    else selectedTeacherIds.delete(cb.dataset.id);
+  });
+  updateTeacherBulkUI();
+});
+
+bulkDeleteTeachers.addEventListener('click', async () => {
+  if (selectedTeacherIds.size === 0) return;
+  if (!confirm(`هل تريد حذف ${selectedTeacherIds.size} سجل نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+  bulkDeleteTeachers.disabled = true;
+  bulkDeleteTeachers.textContent = 'جارِ الحذف...';
+  try{
+    await fbReadyPromise;
+    for (const id of selectedTeacherIds){
+      await fb.deleteDoc(fb.doc(fb.db, TEACHERS_COLLECTION, id));
+    }
+    selectedTeacherIds.clear();
+    loadTeachers();
+  }catch(err){
+    alert('تعذّر حذف بعض السجلات: ' + err.message);
+  }finally{
+    resetTeacherBulkDeleteBtn();
+  }
+});
+
 function renderTeachersTable(){
   let list = allTeachers;
 
   if (activeTeacherFilter){
     list = list.filter(t => getStaffCategory(t.jobTitle) === activeTeacherFilter);
+  }
+  if (activeEmploymentFilter){
+    list = list.filter(t => {
+      const e = t.employmentType || '';
+      if (activeEmploymentFilter === 'غير محدد') return e !== 'ملاك' && e !== 'عقد';
+      return e === activeEmploymentFilter;
+    });
   }
 
   const term = searchTeachers.value.trim().toLowerCase();
@@ -500,17 +623,25 @@ function renderTeachersTable(){
     );
   }
 
-  teachersTitle.textContent = activeTeacherFilter
-    ? `👨‍🏫 ${activeTeacherFilter} (${list.length})`
+  list = [...list].sort((a, b) => {
+    const diff = getTime(a) - getTime(b);
+    return sortTeachers.value === 'oldest' ? diff : -diff;
+  });
+
+  const titleParts = [activeTeacherFilter, activeEmploymentFilter].filter(Boolean).join(' — ');
+  teachersTitle.textContent = titleParts
+    ? `👨‍🏫 ${titleParts} (${list.length})`
     : `👨‍🏫 بيانات المدرسين والكادر (${list.length})`;
 
   if (list.length === 0){
-    teachersBody.innerHTML = '<tr class="empty-row"><td colspan="7">لا توجد نتائج</td></tr>';
+    teachersBody.innerHTML = '<tr class="empty-row"><td colspan="8">لا توجد نتائج</td></tr>';
+    selectAllTeachers.checked = false;
     return;
   }
 
   teachersBody.innerHTML = list.map(t => `
     <tr>
+      <td><input type="checkbox" class="row-check" data-id="${t.id}" ${selectedTeacherIds.has(t.id) ? 'checked' : ''}></td>
       <td>${t.photo ? `<img class="thumb" src="${t.photo}">` : '-'}</td>
       <td>${esc(t.fullName)}</td>
       <td>${esc(t.classification)}</td>
@@ -526,6 +657,17 @@ function renderTeachersTable(){
       </td>
     </tr>
   `).join('');
+
+  teachersBody.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedTeacherIds.add(cb.dataset.id);
+      else selectedTeacherIds.delete(cb.dataset.id);
+      selectAllTeachers.checked = teachersBody.querySelectorAll('.row-check').length > 0 &&
+        [...teachersBody.querySelectorAll('.row-check')].every(c => c.checked);
+      updateTeacherBulkUI();
+    });
+  });
+  updateTeacherBulkUI();
 
   bindRowActions(teachersBody, allTeachers, TEACHERS_COLLECTION, loadTeachers, TEACHER_EDIT_FIELDS);
 }
@@ -648,6 +790,54 @@ document.getElementById('showAllStudents').addEventListener('click', () => {
   renderStudentsTable();
 });
 
+/* Sorting */
+const sortStudents = document.getElementById('sortStudents');
+sortStudents.addEventListener('change', renderStudentsTable);
+
+/* Bulk selection */
+let selectedStudentIds = new Set();
+const selectAllStudents = document.getElementById('selectAllStudents');
+const bulkDeleteStudents = document.getElementById('bulkDeleteStudents');
+
+function resetStudentBulkDeleteBtn(){
+  bulkDeleteStudents.innerHTML = '🗑 حذف المحدد (<span id="studentSelCount">' + selectedStudentIds.size + '</span>)';
+  bulkDeleteStudents.disabled = selectedStudentIds.size === 0;
+}
+
+function updateStudentBulkUI(){
+  const countEl = document.getElementById('studentSelCount');
+  if (countEl) countEl.textContent = selectedStudentIds.size;
+  bulkDeleteStudents.disabled = selectedStudentIds.size === 0;
+}
+
+selectAllStudents.addEventListener('change', () => {
+  studentsBody.querySelectorAll('.row-check').forEach(cb => {
+    cb.checked = selectAllStudents.checked;
+    if (selectAllStudents.checked) selectedStudentIds.add(cb.dataset.id);
+    else selectedStudentIds.delete(cb.dataset.id);
+  });
+  updateStudentBulkUI();
+});
+
+bulkDeleteStudents.addEventListener('click', async () => {
+  if (selectedStudentIds.size === 0) return;
+  if (!confirm(`هل تريد حذف ${selectedStudentIds.size} سجل نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+  bulkDeleteStudents.disabled = true;
+  bulkDeleteStudents.textContent = 'جارِ الحذف...';
+  try{
+    await fbReadyPromise;
+    for (const id of selectedStudentIds){
+      await fb.deleteDoc(fb.doc(fb.db, STUDENTS_COLLECTION, id));
+    }
+    selectedStudentIds.clear();
+    loadStudents();
+  }catch(err){
+    alert('تعذّر حذف بعض السجلات: ' + err.message);
+  }finally{
+    resetStudentBulkDeleteBtn();
+  }
+});
+
 function renderStudentsTable(){
   let list = activeFilter
     ? allStudents.filter(t => (t.grade||'غير محدد') === activeFilter.grade && (t.section||'غير محدد') === activeFilter.section)
@@ -660,17 +850,24 @@ function renderStudentsTable(){
     );
   }
 
+  list = [...list].sort((a, b) => {
+    const diff = getTime(a) - getTime(b);
+    return sortStudents.value === 'oldest' ? diff : -diff;
+  });
+
   studentsTitle.textContent = activeFilter
     ? `🧑‍🎓 طلاب ${activeFilter.grade} - شعبة ${activeFilter.section} (${list.length})`
     : `🧑‍🎓 بيانات الطلاب (${list.length})`;
 
   if (list.length === 0){
-    studentsBody.innerHTML = '<tr class="empty-row"><td colspan="7">لا توجد نتائج</td></tr>';
+    studentsBody.innerHTML = '<tr class="empty-row"><td colspan="8">لا توجد نتائج</td></tr>';
+    selectAllStudents.checked = false;
     return;
   }
 
   studentsBody.innerHTML = list.map(t => `
     <tr>
+      <td><input type="checkbox" class="row-check" data-id="${t.id}" ${selectedStudentIds.has(t.id) ? 'checked' : ''}></td>
       <td>${t.photo ? `<img class="thumb" src="${t.photo}">` : '-'}</td>
       <td>${esc([t.studentFirstName, t.fatherName, t.grandfatherName].filter(Boolean).join(' '))}</td>
       <td>${esc(t.lastName)}</td>
@@ -686,6 +883,17 @@ function renderStudentsTable(){
       </td>
     </tr>
   `).join('');
+
+  studentsBody.querySelectorAll('.row-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedStudentIds.add(cb.dataset.id);
+      else selectedStudentIds.delete(cb.dataset.id);
+      selectAllStudents.checked = studentsBody.querySelectorAll('.row-check').length > 0 &&
+        [...studentsBody.querySelectorAll('.row-check')].every(c => c.checked);
+      updateStudentBulkUI();
+    });
+  });
+  updateStudentBulkUI();
 
   bindRowActions(studentsBody, allStudents, STUDENTS_COLLECTION, loadStudents, STUDENT_EDIT_FIELDS);
 }
@@ -1097,4 +1305,3 @@ document.getElementById('exportStudents').addEventListener('click', async (e) =>
 </script>
 </body>
 </html>
-
