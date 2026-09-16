@@ -263,8 +263,8 @@
       </div>
       <div class="actions" style="margin-bottom:10px;">
         <select class="chip-btn" id="sortTeachers" style="cursor:pointer;">
-          <option value="oldest">📅 من الأقدم إلى الأحدث</option>
-          <option value="newest">📅 من الأحدث إلى الأقدم</option>
+          <option value="oldest">📅 الأقدم تعييناً أولاً</option>
+          <option value="newest">📅 الأحدث تعييناً أولاً</option>
         </select>
         <button class="chip-btn danger" id="bulkDeleteTeachers" disabled>🗑 حذف المحدد (<span id="teacherSelCount">0</span>)</button>
       </div>
@@ -558,6 +558,16 @@ function getTime(t){
   return t.createdAt && t.createdAt.toDate ? t.createdAt.toDate().getTime() : 0;
 }
 
+// Teachers sort by "تاريخ اول تعيين" (appointmentDate, format YYYY-MM-DD) entered by the teacher.
+// Records without a valid appointmentDate fall back to registration time so they don't vanish from sort order.
+function getTeacherSortTime(t){
+  if (t.appointmentDate){
+    const d = new Date(t.appointmentDate);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  return getTime(t);
+}
+
 /* Bulk selection */
 let selectedTeacherIds = new Set();
 const selectAllTeachers = document.getElementById('selectAllTeachers');
@@ -624,7 +634,7 @@ function renderTeachersTable(){
   }
 
   list = [...list].sort((a, b) => {
-    const diff = getTime(a) - getTime(b);
+    const diff = getTeacherSortTime(a) - getTeacherSortTime(b);
     return sortTeachers.value === 'oldest' ? diff : -diff;
   });
 
