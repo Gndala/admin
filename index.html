@@ -254,7 +254,10 @@
         <h2 id="teachersTitle">👨‍🏫 بيانات المدرسين والكادر</h2>
         <div class="actions">
           <button class="chip-btn" id="refreshTeachers">تحديث</button>
+          <button class="chip-btn" id="showLatestTeacher">🕑 آخر تسجيل</button>
           <button class="chip-btn primary" id="exportTeachers">⬇ تصدير Excel</button>
+          <button class="chip-btn primary" id="exportMalak">⬇ تنزيل الملاك (حسب التعيين)</button>
+          <button class="chip-btn primary" id="exportAqd">⬇ تنزيل العقود (حسب التعيين)</button>
         </div>
       </div>
       <div class="stat-row" id="teachersStats"></div>
@@ -684,6 +687,15 @@ function renderTeachersTable(){
 
 searchTeachers.addEventListener('input', renderTeachersTable);
 document.getElementById('refreshTeachers').addEventListener('click', loadTeachers);
+
+document.getElementById('showLatestTeacher').addEventListener('click', () => {
+  if (allTeachers.length === 0){
+    alert('لا يوجد أي مدرس مسجل حالياً.');
+    return;
+  }
+  const latest = [...allTeachers].sort((a, b) => getTime(b) - getTime(a))[0];
+  openViewModal(latest, 'teachers', TEACHER_EDIT_FIELDS);
+});
 
 const TEACHER_EDIT_FIELDS = [
   {key:'fullName', label:'الاسم الرباعي واللقب'},
@@ -1181,66 +1193,102 @@ async function exportToExcel(list, columns, mapRow, filenamePrefix, sheetName){
   URL.revokeObjectURL(url);
 }
 
+const TEACHER_EXPORT_COLUMNS = [
+  { header:'الصورة', key:'photo', width:10 },
+  { header:'الاسم الرباعي', key:'fullName', width:26 },
+  { header:'اسم الأم', key:'motherName', width:20 },
+  { header:'الجنس', key:'gender', width:8 },
+  { header:'الجنسية', key:'nationality', width:12 },
+  { header:'مسقط الرأس', key:'birthPlace', width:16 },
+  { header:'تاريخ الميلاد', key:'birthDate', width:14 },
+  { header:'التصنيف', key:'classification', width:10 },
+  { header:'الرقم الوظيفي', key:'employeeNumber', width:14 },
+  { header:'الرقم العائلي', key:'familyNumber', width:14 },
+  { header:'نوع التوظيف', key:'employmentType', width:12 },
+  { header:'العنوان الوظيفي', key:'jobTitle', width:18 },
+  { header:'الدرجة الوظيفية', key:'jobGrade', width:14 },
+  { header:'المسمى الوظيفي', key:'jobDesignation', width:16 },
+  { header:'المنصب الحالي', key:'currentPosition', width:16 },
+  { header:'الحالة الاجتماعية', key:'maritalStatus', width:14 },
+  { header:'تاريخ اول تعيين', key:'appointmentDate', width:14 },
+  { header:'الشهادة', key:'qualification', width:16 },
+  { header:'سنة التخرج', key:'graduationYear', width:12 },
+  { header:'الجامعة', key:'university', width:18 },
+  { header:'الكلية', key:'college', width:16 },
+  { header:'الاختصاص', key:'specialization', width:16 },
+  { header:'المادة', key:'subject', width:16 },
+  { header:'الحي', key:'district', width:14 },
+  { header:'المحلة', key:'mahalla', width:12 },
+  { header:'الزقاق', key:'alley', width:10 },
+  { header:'رقم الدار', key:'houseNo', width:10 },
+  { header:'العنوان الكامل', key:'fullAddress', width:22 },
+  { header:'أقرب نقطة دالة', key:'landmark', width:20 },
+  { header:'رقم الهاتف', key:'phone', width:16 },
+  { header:'رقم البطاقة الموحدة', key:'unifiedCard', width:18 },
+  { header:'البريد الإلكتروني', key:'email', width:20 },
+  { header:'اسم جهة الطوارئ', key:'emergencyName', width:18 },
+  { header:'صلة جهة الطوارئ', key:'emergencyRelation', width:14 },
+  { header:'هاتف الطوارئ', key:'emergencyPhone', width:16 },
+  { header:'تاريخ التسجيل', key:'createdAt', width:16 },
+];
+
+function mapTeacherRow(t){
+  return {
+    fullName: t.fullName||'', motherName: t.motherName||'', gender: t.gender||'', nationality: t.nationality||'',
+    birthPlace: t.birthPlace||'', birthDate: t.birthDate||'', classification: t.classification||'',
+    employeeNumber: t.employeeNumber||'', familyNumber: t.familyNumber||'', employmentType: t.employmentType||'',
+    jobTitle: t.jobTitle||'', jobGrade: t.jobGrade||'', jobDesignation: t.jobDesignation||'',
+    currentPosition: t.currentPosition||'', maritalStatus: t.maritalStatus||'', appointmentDate: t.appointmentDate||'',
+    qualification: t.qualification||'', graduationYear: t.graduationYear||'', university: t.university||'',
+    college: t.college||'', specialization: t.specialization||'', subject: t.subject||'',
+    district: t.district||'', mahalla: t.mahalla||'', alley: t.alley||'', houseNo: t.houseNo||'',
+    fullAddress: t.fullAddress||'', landmark: t.landmark||'', phone: t.phone||'', unifiedCard: t.unifiedCard||'',
+    email: t.email||'', emergencyName: t.emergencyName||'', emergencyRelation: t.emergencyRelation||'',
+    emergencyPhone: t.emergencyPhone||'',
+    createdAt: t.createdAt && t.createdAt.toDate ? t.createdAt.toDate().toLocaleDateString('ar-IQ') : ''
+  };
+}
+
 document.getElementById('exportTeachers').addEventListener('click', async (e) => {
   const btn = e.target;
   btn.disabled = true; btn.textContent = 'جارِ التصدير...';
   try{
-    await exportToExcel(allTeachers, [
-      { header:'الصورة', key:'photo', width:10 },
-      { header:'الاسم الرباعي', key:'fullName', width:26 },
-      { header:'اسم الأم', key:'motherName', width:20 },
-      { header:'الجنس', key:'gender', width:8 },
-      { header:'الجنسية', key:'nationality', width:12 },
-      { header:'مسقط الرأس', key:'birthPlace', width:16 },
-      { header:'تاريخ الميلاد', key:'birthDate', width:14 },
-      { header:'التصنيف', key:'classification', width:10 },
-      { header:'الرقم الوظيفي', key:'employeeNumber', width:14 },
-      { header:'الرقم العائلي', key:'familyNumber', width:14 },
-      { header:'نوع التوظيف', key:'employmentType', width:12 },
-      { header:'العنوان الوظيفي', key:'jobTitle', width:18 },
-      { header:'الدرجة الوظيفية', key:'jobGrade', width:14 },
-      { header:'المسمى الوظيفي', key:'jobDesignation', width:16 },
-      { header:'المنصب الحالي', key:'currentPosition', width:16 },
-      { header:'الحالة الاجتماعية', key:'maritalStatus', width:14 },
-      { header:'تاريخ اول تعيين', key:'appointmentDate', width:14 },
-      { header:'الشهادة', key:'qualification', width:16 },
-      { header:'سنة التخرج', key:'graduationYear', width:12 },
-      { header:'الجامعة', key:'university', width:18 },
-      { header:'الكلية', key:'college', width:16 },
-      { header:'الاختصاص', key:'specialization', width:16 },
-      { header:'المادة', key:'subject', width:16 },
-      { header:'الحي', key:'district', width:14 },
-      { header:'المحلة', key:'mahalla', width:12 },
-      { header:'الزقاق', key:'alley', width:10 },
-      { header:'رقم الدار', key:'houseNo', width:10 },
-      { header:'العنوان الكامل', key:'fullAddress', width:22 },
-      { header:'أقرب نقطة دالة', key:'landmark', width:20 },
-      { header:'رقم الهاتف', key:'phone', width:16 },
-      { header:'رقم البطاقة الموحدة', key:'unifiedCard', width:18 },
-      { header:'البريد الإلكتروني', key:'email', width:20 },
-      { header:'اسم جهة الطوارئ', key:'emergencyName', width:18 },
-      { header:'صلة جهة الطوارئ', key:'emergencyRelation', width:14 },
-      { header:'هاتف الطوارئ', key:'emergencyPhone', width:16 },
-      { header:'تاريخ التسجيل', key:'createdAt', width:16 },
-    ], (t) => ({
-      fullName: t.fullName||'', motherName: t.motherName||'', gender: t.gender||'', nationality: t.nationality||'',
-      birthPlace: t.birthPlace||'', birthDate: t.birthDate||'', classification: t.classification||'',
-      employeeNumber: t.employeeNumber||'', familyNumber: t.familyNumber||'', employmentType: t.employmentType||'',
-      jobTitle: t.jobTitle||'', jobGrade: t.jobGrade||'', jobDesignation: t.jobDesignation||'',
-      currentPosition: t.currentPosition||'', maritalStatus: t.maritalStatus||'', appointmentDate: t.appointmentDate||'',
-      qualification: t.qualification||'', graduationYear: t.graduationYear||'', university: t.university||'',
-      college: t.college||'', specialization: t.specialization||'', subject: t.subject||'',
-      district: t.district||'', mahalla: t.mahalla||'', alley: t.alley||'', houseNo: t.houseNo||'',
-      fullAddress: t.fullAddress||'', landmark: t.landmark||'', phone: t.phone||'', unifiedCard: t.unifiedCard||'',
-      email: t.email||'', emergencyName: t.emergencyName||'', emergencyRelation: t.emergencyRelation||'',
-      emergencyPhone: t.emergencyPhone||'',
-      createdAt: t.createdAt && t.createdAt.toDate ? t.createdAt.toDate().toLocaleDateString('ar-IQ') : ''
-    }), 'بيانات_المدرسين_اعدادية_ام_قصر', 'المدرسين');
+    await exportToExcel(allTeachers, TEACHER_EXPORT_COLUMNS, mapTeacherRow, 'بيانات_المدرسين_اعدادية_ام_قصر', 'المدرسين');
   }catch(err){
     alert('حدث خطأ أثناء التصدير: ' + err.message);
   }finally{
     btn.disabled = false; btn.textContent = '⬇ تصدير Excel';
   }
+});
+
+/* Export Malak / Aqd sorted by appointment date (oldest first) */
+async function exportByEmploymentType(employmentType, btn, filenamePrefix, sheetName){
+  const originalText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'جارِ التصدير...';
+  try{
+    const list = allTeachers
+      .filter(t => t.employmentType === employmentType)
+      .sort((a, b) => getTeacherSortTime(a) - getTeacherSortTime(b));
+
+    if (list.length === 0){
+      alert(`لا يوجد أي موظف بنوع توظيف "${employmentType}" حالياً.`);
+      return;
+    }
+
+    await exportToExcel(list, TEACHER_EXPORT_COLUMNS, mapTeacherRow, filenamePrefix, sheetName);
+  }catch(err){
+    alert('حدث خطأ أثناء التصدير: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = originalText;
+  }
+}
+
+document.getElementById('exportMalak').addEventListener('click', (e) => {
+  exportByEmploymentType('ملاك', e.target, 'الملاك_حسب_تاريخ_التعيين_اعدادية_ام_قصر', 'الملاك');
+});
+
+document.getElementById('exportAqd').addEventListener('click', (e) => {
+  exportByEmploymentType('عقد', e.target, 'العقود_حسب_تاريخ_التعيين_اعدادية_ام_قصر', 'العقود');
 });
 
 document.getElementById('exportStudents').addEventListener('click', async (e) => {
@@ -1315,3 +1363,4 @@ document.getElementById('exportStudents').addEventListener('click', async (e) =>
 </script>
 </body>
 </html>
+
