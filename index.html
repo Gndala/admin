@@ -32,6 +32,9 @@
 <!-- ExcelJS for Excel export with embedded images -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 
+<!-- Chart.js for statistics dashboards -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+
 <style>
   :root{
     --navy:#0b2545;
@@ -60,22 +63,34 @@
   }
   .container{max-width:1100px;margin:0 auto;padding:0 16px;}
 
-  header.top{padding:26px 16px 14px;text-align:center;color:#fff;}
+  header.top{padding:26px 16px 14px;text-align:center;color:#fff;position:relative;overflow:hidden;}
+  header.top::before{
+    content:"";
+    position:absolute;inset:0;
+    background-image:
+      linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size:30px 30px;
+    mask-image:radial-gradient(ellipse 100% 100% at 50% 0%, #000 40%, transparent 90%);
+    pointer-events:none;
+  }
   header.top .badge{
+    position:relative;z-index:1;
     display:inline-flex;align-items:center;gap:8px;
     background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.25);
     padding:6px 14px;border-radius:999px;font-size:12.5px;color:var(--gold-2);
     margin-bottom:10px;
+    box-shadow:0 4px 12px -4px rgba(0,0,0,.3);
   }
-  header.top h1{font-size:20px;margin:0 0 4px;font-weight:800;}
-  header.top p{margin:0;color:#c9d4e3;font-size:13.5px;}
+  header.top h1{position:relative;z-index:1;font-size:20px;margin:0 0 4px;font-weight:800;}
+  header.top p{position:relative;z-index:1;margin:0;color:#c9d4e3;font-size:13.5px;}
 
   /* ---------- Login card ---------- */
   #loginWrap{max-width:380px;margin:60px auto 0;padding:0 16px;}
   body.logged-in #loginWrap{display:none !important;}
   .login-card{
     background:var(--card);border-radius:var(--radius);
-    padding:28px 22px;box-shadow:0 14px 38px -12px rgba(11,37,69,.25);
+    padding:28px 22px;box-shadow:0 20px 50px -16px rgba(11,37,69,.3);
     text-align:center;
   }
   .login-card .icon{font-size:34px;margin-bottom:10px;}
@@ -84,14 +99,18 @@
     width:100%;border:1.5px solid var(--border);border-radius:12px;
     padding:12px 14px;font-size:15px;margin-bottom:10px;text-align:center;
     font-family:inherit;
+    transition:border-color .15s, box-shadow .15s;
   }
-  .login-card input:focus{outline:none;border-color:var(--navy);}
+  .login-card input:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 4px rgba(11,37,69,.1);}
   .login-card .err{color:var(--danger);font-size:13px;min-height:18px;margin-bottom:8px;font-weight:700;}
   .login-card button{
     width:100%;background:linear-gradient(135deg, var(--navy), var(--navy-2));
     color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;
     font-weight:800;cursor:pointer;
+    box-shadow:0 10px 24px -10px rgba(11,37,69,.5);
+    transition:transform .12s, box-shadow .12s;
   }
+  .login-card button:hover{transform:translateY(-1px);box-shadow:0 14px 30px -10px rgba(11,37,69,.6);}
 
   /* ---------- Dashboard ---------- */
   #dashboard{display:none;}
@@ -106,10 +125,15 @@
   }
   .tab-btn.active.teachers{background:linear-gradient(135deg, var(--navy), var(--navy-2));color:#fff;border-color:var(--navy);}
   .tab-btn.active.students{background:linear-gradient(135deg, var(--violet), var(--pink));color:#fff;border-color:var(--violet);}
+  .tab-btn.active.stats{background:linear-gradient(135deg, #059669, #10B981);color:#fff;border-color:#059669;}
+
+  .chart-wrap{position:relative;height:280px;}
+  .chart-wrap-sm{height:220px;max-width:320px;margin:0 auto;}
 
   .card{
     background:var(--card);border-radius:var(--radius);padding:20px 18px;
-    margin-bottom:16px;box-shadow:0 8px 26px -14px rgba(11,37,69,.18);
+    margin-bottom:16px;
+    box-shadow:0 1px 2px rgba(11,37,69,.05), 0 6px 14px -10px rgba(11,37,69,.14), 0 18px 32px -16px rgba(11,37,69,.22);
     border:1px solid var(--border);
   }
   .card-top{
@@ -121,18 +145,21 @@
   .chip-btn{
     border:1.5px solid var(--border);background:#fff;color:var(--text);
     border-radius:11px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;
+    transition:transform .12s, box-shadow .12s, border-color .12s, background .12s;
   }
-  .chip-btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);}
-  .chip-btn.violet{background:var(--violet);color:#fff;border-color:var(--violet);}
+  .chip-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 6px 14px -6px rgba(11,37,69,.25);}
+  .chip-btn.primary{background:var(--navy);color:#fff;border-color:var(--navy);box-shadow:0 3px 10px -4px rgba(11,37,69,.4);}
+  .chip-btn.violet{background:var(--violet);color:#fff;border-color:var(--violet);box-shadow:0 3px 10px -4px rgba(124,58,237,.4);}
   .chip-btn.danger{color:var(--danger);border-color:#f6c8c6;}
-  .chip-btn:disabled{opacity:.55;cursor:not-allowed;}
+  .chip-btn:disabled{opacity:.55;cursor:not-allowed;transform:none;}
 
   .search-box{width:100%;margin-bottom:14px;}
   .search-box input{
     width:100%;border:1.5px solid var(--border);border-radius:12px;
     padding:10px 14px;font-size:14px;font-family:inherit;
+    transition:border-color .15s, box-shadow .15s;
   }
-  .search-box input:focus{outline:none;border-color:var(--navy);}
+  .search-box input:focus{outline:none;border-color:var(--navy);box-shadow:0 0 0 4px rgba(11,37,69,.08);}
 
   #distributionGrid, #teacherDistGrid{
     display:grid;grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));
@@ -141,9 +168,10 @@
   .dist-card{
     background:#F6F8FB;border:1.5px solid var(--border);border-radius:13px;
     padding:12px;text-align:center;cursor:pointer;
-    transition:transform .12s, border-color .12s;
+    transition:transform .12s, border-color .12s, box-shadow .12s;
   }
-  .dist-card:hover{transform:translateY(-2px);border-color:var(--navy);}
+  .dist-card:hover{transform:translateY(-2px);border-color:var(--navy);box-shadow:0 8px 18px -8px rgba(11,37,69,.25);}
+  .dist-card.active{box-shadow:0 10px 22px -8px rgba(11,37,69,.35);}
   .dist-card.active *{color:#fff !important;}
   #teacherDistGrid .dist-card.active{background:linear-gradient(135deg, var(--navy), var(--navy-2));border-color:var(--navy);}
   #distributionGrid .dist-card.active{background:linear-gradient(135deg, var(--violet), var(--pink));border-color:var(--violet);}
@@ -153,10 +181,13 @@
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{padding:8px 7px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;}
   th{background:#F6F8FB;font-weight:800;position:sticky;top:0;}
+  tbody tr{transition:background .12s;}
+  tbody tr:hover{background:#FAFBFD;}
   .table-wrap{overflow-x:auto;border-radius:12px;border:1px solid var(--border);max-height:560px;overflow-y:auto;}
   .thumb{width:32px;height:32px;border-radius:8px;object-fit:cover;}
   .row-actions{display:flex;gap:5px;}
-  .row-actions button{border:none;border-radius:8px;padding:5px 9px;font-size:11.5px;cursor:pointer;font-weight:700;}
+  .row-actions button{border:none;border-radius:8px;padding:5px 9px;font-size:11.5px;cursor:pointer;font-weight:700;transition:filter .12s;}
+  .row-actions button:hover{filter:brightness(.94);}
   .row-actions .view{background:#E0F2FE;color:#0369A1;}
   .row-actions .edit{background:#EAE6F7;color:#5B21B6;}
   .row-actions .del{background:#FDEEEE;color:var(--danger);}
@@ -192,6 +223,21 @@
   .view-item{background:#F6F8FB;border-radius:10px;padding:8px 11px;}
   .view-item .vlabel{font-size:11px;color:var(--muted);font-weight:700;margin-bottom:2px;}
   .view-item .vvalue{font-size:13.5px;font-weight:700;color:var(--text);word-break:break-word;}
+
+  .latest-item{
+    display:flex;align-items:center;gap:12px;
+    background:#F6F8FB;border:1px solid var(--border);border-radius:12px;
+    padding:10px 12px;cursor:pointer;text-align:right;
+    transition:background .12s, border-color .12s;
+  }
+  .latest-item:hover{background:#EEF2F8;border-color:var(--navy);}
+  .latest-item .lthumb{width:42px;height:42px;border-radius:10px;object-fit:cover;flex-shrink:0;background:#e2e6ec;}
+  .latest-item .lname{font-size:13.5px;font-weight:800;color:var(--text);}
+  .latest-item .lmeta{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .latest-item .lbadge{
+    margin-inline-start:auto;background:var(--navy);color:#fff;font-size:11px;font-weight:700;
+    padding:3px 9px;border-radius:999px;flex-shrink:0;
+  }
 
   .stat-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px;}
   .stat-pill{
@@ -229,6 +275,7 @@
   <div class="tabs">
     <button class="tab-btn active teachers" id="tabTeachers">👨‍🏫 المدرسين والكادر</button>
     <button class="tab-btn students" id="tabStudents">🧑‍🎓 الطلاب</button>
+    <button class="tab-btn stats" id="tabStats">📊 الإحصائيات</button>
   </div>
 
   <!-- Teachers panel -->
@@ -254,7 +301,7 @@
         <h2 id="teachersTitle">👨‍🏫 بيانات المدرسين والكادر</h2>
         <div class="actions">
           <button class="chip-btn" id="refreshTeachers">تحديث</button>
-          <button class="chip-btn" id="showLatestTeacher">🕑 آخر تسجيل</button>
+          <button class="chip-btn" id="showLatestTeachers">🆕 آخر المسجلين الجدد</button>
           <button class="chip-btn primary" id="exportTeachers">⬇ تصدير Excel</button>
           <button class="chip-btn primary" id="exportMalak">⬇ تنزيل الملاك (حسب التعيين)</button>
           <button class="chip-btn primary" id="exportAqd">⬇ تنزيل العقود (حسب التعيين)</button>
@@ -307,6 +354,7 @@
         <h2 id="studentsTitle">🧑‍🎓 بيانات الطلاب</h2>
         <div class="actions">
           <button class="chip-btn" id="refreshStudents">تحديث</button>
+          <button class="chip-btn" id="showLatestStudents">🆕 آخر المسجلين الجدد</button>
           <button class="chip-btn violet" id="exportStudents">⬇ تصدير Excel</button>
         </div>
       </div>
@@ -341,6 +389,51 @@
     </div>
   </div>
 
+  <!-- Statistics panel -->
+  <div id="panelStats" style="display:none;">
+    <div class="card">
+      <div class="card-top">
+        <h2>📌 نظرة عامة</h2>
+      </div>
+      <div class="stat-row" id="overviewStats"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <h2>👨‍🏫 توزيع الكادر حسب الفئة الوظيفية</h2>
+      </div>
+      <div class="chart-wrap"><canvas id="chartStaffCategory"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <h2>🏷️ نسبة الملاك إلى العقود</h2>
+      </div>
+      <div class="chart-wrap chart-wrap-sm"><canvas id="chartEmployment"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <h2>🧑‍🎓 توزيع الطلاب حسب الصف الدراسي</h2>
+      </div>
+      <div class="chart-wrap"><canvas id="chartGrades"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <h2>⚧ نسبة الطلاب حسب الجنس</h2>
+      </div>
+      <div class="chart-wrap chart-wrap-sm"><canvas id="chartGender"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-top">
+        <h2>📈 التسجيلات الشهرية (آخر 6 أشهر)</h2>
+      </div>
+      <div class="chart-wrap"><canvas id="chartMonthly"></canvas></div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Edit Modal -->
@@ -363,6 +456,17 @@
     <div class="modal-actions">
       <button class="cancel" id="viewClose">إغلاق</button>
       <button class="save" id="viewDownloadPdf" style="background:var(--gold-2);color:#1b2430;">⬇ تنزيل استمارة PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- Latest Registrations Modal -->
+<div class="modal-overlay" id="latestModal">
+  <div class="modal-box" style="max-width:520px;">
+    <h3 id="latestModalTitle">🆕 آخر المسجلين الجدد</h3>
+    <div id="latestModalList" style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto;margin-bottom:14px;"></div>
+    <div class="modal-actions">
+      <button class="cancel" id="latestModalClose" style="width:100%;">إغلاق</button>
     </div>
   </div>
 </div>
@@ -412,21 +516,24 @@ loginBtn.addEventListener('click', () => {
 /* ---------- Tabs ---------- */
 const tabTeachers = document.getElementById('tabTeachers');
 const tabStudents = document.getElementById('tabStudents');
+const tabStats = document.getElementById('tabStats');
 const panelTeachers = document.getElementById('panelTeachers');
 const panelStudents = document.getElementById('panelStudents');
+const panelStats = document.getElementById('panelStats');
 
-tabTeachers.addEventListener('click', () => {
-  tabTeachers.classList.add('active');
-  tabStudents.classList.remove('active');
-  panelTeachers.style.display = 'block';
-  panelStudents.style.display = 'none';
-});
-tabStudents.addEventListener('click', () => {
-  tabStudents.classList.add('active');
-  tabTeachers.classList.remove('active');
-  panelStudents.style.display = 'block';
-  panelTeachers.style.display = 'none';
-});
+function switchTab(active){
+  const tabs = { teachers: tabTeachers, students: tabStudents, stats: tabStats };
+  const panels = { teachers: panelTeachers, students: panelStudents, stats: panelStats };
+  Object.keys(tabs).forEach(k => {
+    tabs[k].classList.toggle('active', k === active);
+    panels[k].style.display = (k === active) ? 'block' : 'none';
+  });
+  if (active === 'stats') renderStatsCharts();
+}
+
+tabTeachers.addEventListener('click', () => switchTab('teachers'));
+tabStudents.addEventListener('click', () => switchTab('students'));
+tabStats.addEventListener('click', () => switchTab('stats'));
 
 /* ================= TEACHERS ================= */
 let allTeachers = [];
@@ -688,13 +795,8 @@ function renderTeachersTable(){
 searchTeachers.addEventListener('input', renderTeachersTable);
 document.getElementById('refreshTeachers').addEventListener('click', loadTeachers);
 
-document.getElementById('showLatestTeacher').addEventListener('click', () => {
-  if (allTeachers.length === 0){
-    alert('لا يوجد أي مدرس مسجل حالياً.');
-    return;
-  }
-  const latest = [...allTeachers].sort((a, b) => getTime(b) - getTime(a))[0];
-  openViewModal(latest, 'teachers', TEACHER_EDIT_FIELDS);
+document.getElementById('showLatestTeachers').addEventListener('click', () => {
+  openLatestModal(allTeachers, 'teachers', 'آخر المسجلين الجدد — المدرسين والكادر');
 });
 
 const TEACHER_EDIT_FIELDS = [
@@ -923,6 +1025,10 @@ function renderStudentsTable(){
 searchStudents.addEventListener('input', renderStudentsTable);
 document.getElementById('refreshStudents').addEventListener('click', loadStudents);
 
+document.getElementById('showLatestStudents').addEventListener('click', () => {
+  openLatestModal(allStudents, 'students', 'آخر المسجلين الجدد — الطلاب');
+});
+
 const STUDENT_EDIT_FIELDS = [
   {key:'studentFirstName', label:'اسم الطالب'},
   {key:'fatherName', label:'اسم الأب'},
@@ -1071,6 +1177,57 @@ function openViewModal(record, personType, fields){
 }
 
 viewClose.addEventListener('click', () => { viewModal.classList.remove('show'); currentView = null; });
+
+/* ================= LATEST REGISTRATIONS MODAL ================= */
+const latestModal = document.getElementById('latestModal');
+const latestModalTitle = document.getElementById('latestModalTitle');
+const latestModalList = document.getElementById('latestModalList');
+const latestModalClose = document.getElementById('latestModalClose');
+
+function openLatestModal(dataList, personType, title){
+  if (dataList.length === 0){
+    alert('لا توجد أي سجلات بعد.');
+    return;
+  }
+
+  const sorted = [...dataList].sort((a, b) => getTime(b) - getTime(a)).slice(0, 20);
+  latestModalTitle.textContent = `🆕 ${title} (${sorted.length})`;
+
+  latestModalList.innerHTML = sorted.map((r, idx) => {
+    const displayName = personType === 'teachers'
+      ? (r.fullName || 'بدون اسم')
+      : [r.studentFirstName, r.fatherName, r.grandfatherName, r.lastName].filter(Boolean).join(' ') || 'بدون اسم';
+
+    const subLine = personType === 'teachers'
+      ? [r.jobTitle, r.employmentType].filter(Boolean).join(' — ')
+      : [r.grade, r.section ? ('شعبة ' + r.section) : ''].filter(Boolean).join(' — ');
+
+    const dateStr = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString('ar-IQ') : '';
+
+    return `
+      <div class="latest-item" data-idx="${idx}">
+        ${r.photo ? `<img class="lthumb" src="${r.photo}">` : `<div class="lthumb"></div>`}
+        <div>
+          <div class="lname">${esc(displayName)}</div>
+          <div class="lmeta">${esc(subLine)}${dateStr ? ' • ' + esc(dateStr) : ''}</div>
+        </div>
+        <div class="lbadge">#${idx + 1}</div>
+      </div>`;
+  }).join('');
+
+  const editFields = personType === 'teachers' ? TEACHER_EDIT_FIELDS : STUDENT_EDIT_FIELDS;
+  latestModalList.querySelectorAll('.latest-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const record = sorted[parseInt(item.dataset.idx, 10)];
+      latestModal.classList.remove('show');
+      openViewModal(record, personType, editFields);
+    });
+  });
+
+  latestModal.classList.add('show');
+}
+
+latestModalClose.addEventListener('click', () => { latestModal.classList.remove('show'); });
 
 function buildPrintableFormHtml(record, personType, fields, schoolName){
   const displayName = personType === 'teachers'
@@ -1360,6 +1517,132 @@ document.getElementById('exportStudents').addEventListener('click', async (e) =>
     btn.disabled = false; btn.textContent = '⬇ تصدير Excel';
   }
 });
+
+/* ================= STATISTICS DASHBOARD ================= */
+let statsCharts = {};
+
+function destroyChart(id){
+  if (statsCharts[id]){ statsCharts[id].destroy(); delete statsCharts[id]; }
+}
+
+const CHART_PALETTE = ['#0b2545','#c9a227','#7C3AED','#F472B6','#059669','#38BDF8','#DC2626','#F59E0B','#6366F1'];
+
+function renderStatsCharts(){
+  const overviewStats = document.getElementById('overviewStats');
+  const malakCount = allTeachers.filter(t => t.employmentType === 'ملاك').length;
+  const aqdCount = allTeachers.filter(t => t.employmentType === 'عقد').length;
+
+  overviewStats.innerHTML = `
+    <div class="stat-pill">إجمالي الكادر <b>${allTeachers.length}</b></div>
+    <div class="stat-pill">إجمالي الطلاب <b>${allStudents.length}</b></div>
+    <div class="stat-pill">ملاك <b>${malakCount}</b></div>
+    <div class="stat-pill">عقد <b>${aqdCount}</b></div>
+  `;
+
+  /* Staff category bar chart */
+  const catCounts = {};
+  STAFF_CATEGORY_ORDER.forEach(c => catCounts[c] = 0);
+  allTeachers.forEach(t => catCounts[getStaffCategory(t.jobTitle)]++);
+  const catLabels = STAFF_CATEGORY_ORDER.filter(c => c !== 'غير محدد' || catCounts[c] > 0);
+
+  destroyChart('staffCategory');
+  statsCharts.staffCategory = new Chart(document.getElementById('chartStaffCategory'), {
+    type: 'bar',
+    data: {
+      labels: catLabels,
+      datasets: [{ data: catLabels.map(c => catCounts[c]), backgroundColor: CHART_PALETTE, borderRadius: 8 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+
+  /* Employment type pie chart */
+  destroyChart('employment');
+  statsCharts.employment = new Chart(document.getElementById('chartEmployment'), {
+    type: 'doughnut',
+    data: {
+      labels: ['ملاك', 'عقد'],
+      datasets: [{ data: [malakCount, aqdCount], backgroundColor: ['#0b2545', '#c9a227'] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+  });
+
+  /* Students by grade bar chart */
+  const gradeCounts = {};
+  allStudents.forEach(t => {
+    const g = t.grade || 'غير محدد';
+    gradeCounts[g] = (gradeCounts[g] || 0) + 1;
+  });
+  const gradeLabels = Object.keys(gradeCounts);
+
+  destroyChart('grades');
+  statsCharts.grades = new Chart(document.getElementById('chartGrades'), {
+    type: 'bar',
+    data: {
+      labels: gradeLabels,
+      datasets: [{ data: gradeLabels.map(g => gradeCounts[g]), backgroundColor: '#7C3AED', borderRadius: 8 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+
+  /* Students by gender pie chart */
+  const maleCount = allStudents.filter(t => t.gender === 'ذكر').length;
+  const femaleCount = allStudents.filter(t => t.gender === 'أنثى').length;
+
+  destroyChart('gender');
+  statsCharts.gender = new Chart(document.getElementById('chartGender'), {
+    type: 'pie',
+    data: {
+      labels: ['ذكور', 'إناث'],
+      datasets: [{ data: [maleCount, femaleCount], backgroundColor: ['#38BDF8', '#F472B6'] }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+  });
+
+  /* Monthly registrations line chart (last 6 months, teachers + students combined) */
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ key: d.getFullYear() + '-' + d.getMonth(), label: d.toLocaleDateString('ar-IQ', { month:'short', year:'numeric' }) });
+  }
+
+  function countByMonth(list){
+    const counts = {};
+    months.forEach(m => counts[m.key] = 0);
+    list.forEach(t => {
+      if (!t.createdAt || !t.createdAt.toDate) return;
+      const d = t.createdAt.toDate();
+      const key = d.getFullYear() + '-' + d.getMonth();
+      if (key in counts) counts[key]++;
+    });
+    return months.map(m => counts[m.key]);
+  }
+
+  destroyChart('monthly');
+  statsCharts.monthly = new Chart(document.getElementById('chartMonthly'), {
+    type: 'line',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        { label: 'المدرسين والكادر', data: countByMonth(allTeachers), borderColor: '#0b2545', backgroundColor: 'rgba(11,37,69,.1)', tension: .3, fill: true },
+        { label: 'الطلاب', data: countByMonth(allStudents), borderColor: '#7C3AED', backgroundColor: 'rgba(124,58,237,.1)', tension: .3, fill: true }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+}
 </script>
 </body>
 </html>
