@@ -357,6 +357,8 @@
           <button class="chip-btn" id="showLatestStudents">🆕 آخر المسجلين الجدد</button>
           <button class="chip-btn violet" id="exportStudents">⬇ تصدير Excel</button>
           <button class="chip-btn violet" id="exportStudentsRosterPdf">🖨 قائمة PDF رسمية</button>
+          <button class="chip-btn" id="toggleDupStudents">⚠ المكررات فقط</button>
+          <button class="chip-btn" id="backupStudents">💾 نسخة احتياطية (JSON)</button>
         </div>
       </div>
       <div class="stat-row" id="studentsStats"></div>
@@ -964,7 +966,33 @@ bulkDeleteStudents.addEventListener('click', async () => {
   }
 });
 
+/* ---- كشف التكرار: نفس رقم الهوية أو نفس الاسم الكامل + تاريخ الميلاد ---- */
+let showDupOnly = false;
+function studentDupKeys(t){
+  const keys = [];
+  const uni = (t.unifiedCardNumber||'').toString().trim();
+  const civ = (t.civilIdNumber||'').toString().trim();
+  if (uni) keys.push('id:' + uni);
+  if (civ) keys.push('id:' + civ);
+  const name = [t.studentFirstName, t.fatherName, t.grandfatherName, t.lastName].map(v => (v||'').toString().trim()).join(' ');
+  if (name.replace(/\s/g,'') && t.birthDate) keys.push('nm:' + name + '|' + t.birthDate);
+  return keys;
+}
+function computeDupMap(){
+  const count = {};
+  allStudents.forEach(t => studentDupKeys(t).forEach(k => { count[k] = (count[k]||0) + 1; }));
+  const dup = {};
+  allStudents.forEach(t => {
+    const n = Math.max(0, ...studentDupKeys(t).map(k => count[k]));
+    if (n > 1) dup[t.id] = n;
+  });
+  return dup;
+}
+
 function renderStudentsTable(){
+  const dupMap = computeDupMap();
+  const dupBtn = document.getElementById('toggleDupStudents');
+  if (dupBtn) dupBtn.textContent = (showDupOnly ? '✔ ' : '⚠ ') + 'المكررات فقط (' + Object.keys(dupMap).length + ')';
   let list = activeFilter
     ? allStudents.filter(t => (t.grade||'غير محدد') === activeFilter.grade && (t.section||'غير محدد') === activeFilter.section)
     : allStudents;
@@ -975,6 +1003,8 @@ function renderStudentsTable(){
       [t.studentFirstName, t.fatherName, t.grandfatherName, t.lastName, t.fatherPhone].some(v => (v||'').toString().toLowerCase().includes(term))
     );
   }
+
+  if (showDupOnly) list = list.filter(t => dupMap[t.id]);
 
   list = [...list].sort((a, b) => {
     const diff = getTime(a) - getTime(b);
@@ -995,7 +1025,7 @@ function renderStudentsTable(){
     <tr>
       <td><input type="checkbox" class="row-check" data-id="${t.id}" ${selectedStudentIds.has(t.id) ? 'checked' : ''}></td>
       <td>${t.photo ? `<img class="thumb" src="${t.photo}">` : '-'}</td>
-      <td>${esc([t.studentFirstName, t.fatherName, t.grandfatherName].filter(Boolean).join(' '))}</td>
+      <td>${esc([t.studentFirstName, t.fatherName, t.grandfatherName].filter(Boolean).join(' '))}${dupMap[t.id] ? ` <span title="يوجد ${dupMap[t.id]} سجلات بنفس الهوية/الاسم" style="background:#fff3cd;color:#8a6100;border-radius:8px;padding:1px 7px;font-size:11px;white-space:nowrap;">⚠ مكرر (${dupMap[t.id]})</span>` : ''}</td>
       <td>${esc(t.lastName)}</td>
       <td>${esc(t.grade)}</td>
       <td>${esc(t.section)}</td>
@@ -1027,6 +1057,27 @@ function renderStudentsTable(){
 searchStudents.addEventListener('input', renderStudentsTable);
 document.getElementById('refreshStudents').addEventListener('click', loadStudents);
 
+document.getElementById('toggleDupStudents').addEventListener('click', () => {
+  showDupOnly = !showDupOnly;
+  renderStudentsTable();
+});
+
+/* نسخة احتياطية كاملة (كل الحقول والصور) بصيغة JSON */
+document.getElementById('backupStudents').addEventListener('click', () => {
+  if (!allStudents.length){ alert('لا توجد بيانات لتصديرها'); return; }
+  const rows = allStudents.map(t => {
+    const o = { ...t };
+    if (o.createdAt && typeof o.createdAt.toDate === 'function') o.createdAt = o.createdAt.toDate().toISOString();
+    return o;
+  });
+  const blob = new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'students-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
 document.getElementById('showLatestStudents').addEventListener('click', () => {
   openLatestModal(allStudents, 'students', 'آخر المسجلين الجدد — الطلاب');
 });
@@ -1044,7 +1095,7 @@ const STUDENT_EDIT_FIELDS = [
   {key:'idType', label:'نوع الهوية'},
   {key:'unifiedCardNumber', label:'رقم البطاقة الموحدة'},
   {key:'civilIdNumber', label:'رقم هوية الأحوال المدنية'},
-  {key:'birthCertNumber', label:'رقم شهادة الولادة'},
+  {key:'civilRecordNumber', label:'السجل'},
   {key:'idIssueCountry', label:'بلد الإصدار'},
   {key:'statisticalNumber', label:'الرقم الإحصائي'},
   {key:'gender', label:'الجنس', type:'select', options:['ذكر','أنثى']},
@@ -1468,7 +1519,7 @@ document.getElementById('exportStudents').addEventListener('click', async (e) =>
       { header:'نوع الهوية', key:'idType', width:20 },
       { header:'رقم البطاقة الموحدة', key:'unifiedCardNumber', width:18 },
       { header:'رقم هوية الأحوال المدنية', key:'civilIdNumber', width:20 },
-      { header:'رقم شهادة الولادة', key:'birthCertNumber', width:18 },
+      { header:'السجل', key:'civilRecordNumber', width:14 },
       { header:'بلد الإصدار', key:'idIssueCountry', width:14 },
       { header:'الرقم الإحصائي', key:'statisticalNumber', width:14 },
       { header:'الجنس', key:'gender', width:8 },
@@ -1502,7 +1553,7 @@ document.getElementById('exportStudents').addEventListener('click', async (e) =>
       fatherGrandfatherName: t.fatherGrandfatherName||'', lastName: t.lastName||'', motherName: t.motherName||'',
       motherFatherName: t.motherFatherName||'', motherGrandfatherName: t.motherGrandfatherName||'',
       birthDate: t.birthDate||'', idType: t.idType||'', unifiedCardNumber: t.unifiedCardNumber||'',
-      civilIdNumber: t.civilIdNumber||'', birthCertNumber: t.birthCertNumber||'', idIssueCountry: t.idIssueCountry||'',
+      civilIdNumber: t.civilIdNumber||'', civilRecordNumber: t.civilRecordNumber||'', idIssueCountry: t.idIssueCountry||'',
       statisticalNumber: t.statisticalNumber||'', gender: t.gender||'', nationality: t.nationality||'',
       birthCountry: t.birthCountry||'', birthPlace: t.birthPlace||'', motherTongue: t.motherTongue||'',
       bloodType: t.bloodType||'', religion: t.religion||'', fatherPhone: t.fatherPhone||'', notes: t.notes||'',
