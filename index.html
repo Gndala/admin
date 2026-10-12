@@ -364,6 +364,8 @@
             <option value="full">التكرار حسب: الاسم الرباعي + الميلاد</option>
             <option value="id">التكرار حسب: رقم الهوية</option>
           </select>
+          <button class="chip-btn" id="toggleSortByName">🔤 عرض الكل مرتبين بالاسم</button>
+          <button class="chip-btn violet" id="exportStudentsAllDup">⬇ Excel الكل مع المكررات</button>
           <button class="chip-btn" id="backupStudents">💾 نسخة احتياطية (JSON)</button>
         </div>
       </div>
@@ -974,6 +976,7 @@ bulkDeleteStudents.addEventListener('click', async () => {
 
 /* ---- كشف التكرار: نفس رقم الهوية أو نفس الاسم الكامل + تاريخ الميلاد ---- */
 let showDupOnly = false;
+let sortAllByName = false;
 function normAr(v){
   return (v||'').toString()
     .replace(/[\u064B-\u0652\u0640]/g,'')
@@ -1013,6 +1016,8 @@ function computeDupMap(){
 
 function renderStudentsTable(){
   const dupMap = computeDupMap();
+  const sortBtn = document.getElementById('toggleSortByName');
+  if (sortBtn) sortBtn.textContent = (sortAllByName ? '✔ ' : '🔤 ') + 'عرض الكل مرتبين بالاسم';
   const dupBtn = document.getElementById('toggleDupStudents');
   if (dupBtn) dupBtn.textContent = (showDupOnly ? '✔ ' : '⚠ ') + 'المكررات فقط (' + Object.keys(dupMap).length + ')';
   let list = activeFilter
@@ -1029,8 +1034,8 @@ function renderStudentsTable(){
   if (showDupOnly) list = list.filter(t => dupMap[t.id]);
 
   list = [...list].sort((a, b) => {
-    if (showDupOnly){
-      const ka = primaryDupKey(a), kb = primaryDupKey(b);
+    if (showDupOnly || sortAllByName){
+      const ka = primaryDupKey(a) || normAr([a.studentFirstName,a.fatherName,a.grandfatherName].join(' ')), kb = primaryDupKey(b) || normAr([b.studentFirstName,b.fatherName,b.grandfatherName].join(' '));
       if (ka !== kb) return ka.localeCompare(kb, 'ar');
     }
     const diff = getTime(a) - getTime(b);
@@ -1049,8 +1054,8 @@ function renderStudentsTable(){
 
   let prevKey = null;
   studentsBody.innerHTML = list.map(t => {
-    const gk = showDupOnly ? primaryDupKey(t) : null;
-    const sep = (showDupOnly && prevKey !== null && gk !== prevKey) ? ' style="border-top:4px solid #c7b8f5;"' : '';
+    const gk = (showDupOnly || sortAllByName) ? (primaryDupKey(t) || ('u' + t.id)) : null;
+    const sep = ((showDupOnly || sortAllByName) && prevKey !== null && gk !== prevKey) ? ' style="border-top:4px solid #c7b8f5;"' : '';
     prevKey = gk;
     return `
     <tr${sep}>
@@ -1093,6 +1098,41 @@ document.getElementById('toggleDupStudents').addEventListener('click', () => {
   renderStudentsTable();
 });
 document.getElementById('dupMode').addEventListener('change', renderStudentsTable);
+document.getElementById('toggleSortByName').addEventListener('click', () => {
+  sortAllByName = !sortAllByName;
+  if (sortAllByName) showDupOnly = false;
+  renderStudentsTable();
+});
+
+/* Excel لكل الطلاب مع المكررات: مرتب بالاسم لتتجاور المكررات، مع عمودي "مكرر؟" و"عدد التكرار" */
+document.getElementById('exportStudentsAllDup').addEventListener('click', async (e) => {
+  const btn = e.target;
+  if (!allStudents.length){ alert('لا توجد بيانات لتصديرها'); return; }
+  btn.disabled = true; btn.textContent = 'جارِ التصدير...';
+  try{
+    const dupMap = computeDupMap();
+    const keyOf = t => primaryDupKey(t) || normAr([t.studentFirstName,t.fatherName,t.grandfatherName].join(' '));
+    const list = [...allStudents].sort((a, b) => {
+      const ka = keyOf(a), kb = keyOf(b);
+      return ka !== kb ? ka.localeCompare(kb, 'ar') : 0;
+    });
+    const cols = [
+      STUDENT_EXPORT_COLUMNS[0],
+      { header:'مكرر؟', key:'dupFlag', width:10 },
+      { header:'عدد التكرار', key:'dupCount', width:10 },
+      ...STUDENT_EXPORT_COLUMNS.slice(1)
+    ];
+    await exportToExcel(list, cols, t => ({
+      ...mapStudentRow(t),
+      dupFlag: dupMap[t.id] ? 'مكرر' : '',
+      dupCount: dupMap[t.id] || 1
+    }), 'كل_الطلاب_مع_المكررات_اعدادية_ام_قصر', 'الطلاب');
+  }catch(err){
+    alert('حدث خطأ أثناء التصدير: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = '⬇ Excel الكل مع المكررات';
+  }
+});
 
 /* نسخة احتياطية كاملة (كل الحقول والصور) بصيغة JSON */
 document.getElementById('backupStudents').addEventListener('click', () => {
@@ -1533,54 +1573,52 @@ document.getElementById('exportAqd').addEventListener('click', (e) => {
   exportByEmploymentType('عقد', e.target, 'العقود_حسب_تاريخ_التعيين_اعدادية_ام_قصر', 'العقود');
 });
 
-document.getElementById('exportStudents').addEventListener('click', async (e) => {
-  const btn = e.target;
-  btn.disabled = true; btn.textContent = 'جارِ التصدير...';
-  try{
-    await exportToExcel(allStudents, [
-      { header:'الصورة', key:'photo', width:10 },
-      { header:'اسم الطالب', key:'studentFirstName', width:16 },
-      { header:'اسم الأب', key:'fatherName', width:16 },
-      { header:'اسم جد الطالب', key:'grandfatherName', width:16 },
-      { header:'اسم جد الوالد', key:'fatherGrandfatherName', width:16 },
-      { header:'اللقب', key:'lastName', width:14 },
-      { header:'اسم الأم', key:'motherName', width:18 },
-      { header:'اسم والد الأم', key:'motherFatherName', width:16 },
-      { header:'اسم جد الأم', key:'motherGrandfatherName', width:16 },
-      { header:'تاريخ التولد', key:'birthDate', width:14 },
-      { header:'نوع الهوية', key:'idType', width:20 },
-      { header:'رقم البطاقة الموحدة', key:'unifiedCardNumber', width:18 },
-      { header:'رقم هوية الأحوال المدنية', key:'civilIdNumber', width:20 },
-      { header:'السجل', key:'civilRecordNumber', width:14 },
-      { header:'بلد الإصدار', key:'idIssueCountry', width:14 },
-      { header:'الرقم الإحصائي', key:'statisticalNumber', width:14 },
-      { header:'الجنس', key:'gender', width:8 },
-      { header:'الجنسية', key:'nationality', width:12 },
-      { header:'دولة التولد', key:'birthCountry', width:14 },
-      { header:'مسقط الرأس', key:'birthPlace', width:16 },
-      { header:'اللغة الأم', key:'motherTongue', width:12 },
-      { header:'فئة الدم', key:'bloodType', width:8 },
-      { header:'الديانة', key:'religion', width:10 },
-      { header:'هاتف الأب', key:'fatherPhone', width:16 },
-      { header:'ملاحظات', key:'notes', width:22 },
-      { header:'الاحتياجات الخاصة', key:'specialNeeds', width:16 },
-      { header:'لغة الدراسة', key:'studyLanguage', width:12 },
-      { header:'المستوى المعيشي', key:'livingStandard', width:16 },
-      { header:'منحة الرعاية', key:'socialGrant', width:12 },
-      { header:'الصف', key:'grade', width:18 },
-      { header:'الشعبة', key:'section', width:8 },
-      { header:'المحافظة', key:'governorate', width:14 },
-      { header:'القضاء/الناحية', key:'districtSub', width:16 },
-      { header:'المدينة/القرية', key:'city', width:16 },
-      { header:'الحي', key:'district', width:14 },
-      { header:'المحلة', key:'mahalla', width:12 },
-      { header:'زقاق', key:'alley', width:10 },
-      { header:'عنوان 1', key:'addressLine1', width:20 },
-      { header:'عنوان 2', key:'addressLine2', width:20 },
-      { header:'أقرب نقطة دالة', key:'landmark', width:22 },
-      { header:'البريد الإلكتروني', key:'email', width:20 },
-      { header:'تاريخ التسجيل', key:'createdAt', width:16 },
-    ], (t) => ({
+const STUDENT_EXPORT_COLUMNS = [
+  { header:'الصورة', key:'photo', width:10 },
+  { header:'اسم الطالب', key:'studentFirstName', width:16 },
+  { header:'اسم الأب', key:'fatherName', width:16 },
+  { header:'اسم جد الطالب', key:'grandfatherName', width:16 },
+  { header:'اسم جد الوالد', key:'fatherGrandfatherName', width:16 },
+  { header:'اللقب', key:'lastName', width:14 },
+  { header:'اسم الأم', key:'motherName', width:18 },
+  { header:'اسم والد الأم', key:'motherFatherName', width:16 },
+  { header:'اسم جد الأم', key:'motherGrandfatherName', width:16 },
+  { header:'تاريخ التولد', key:'birthDate', width:14 },
+  { header:'نوع الهوية', key:'idType', width:20 },
+  { header:'رقم البطاقة الموحدة', key:'unifiedCardNumber', width:18 },
+  { header:'رقم هوية الأحوال المدنية', key:'civilIdNumber', width:20 },
+  { header:'السجل', key:'civilRecordNumber', width:14 },
+  { header:'بلد الإصدار', key:'idIssueCountry', width:14 },
+  { header:'الرقم الإحصائي', key:'statisticalNumber', width:14 },
+  { header:'الجنس', key:'gender', width:8 },
+  { header:'الجنسية', key:'nationality', width:12 },
+  { header:'دولة التولد', key:'birthCountry', width:14 },
+  { header:'مسقط الرأس', key:'birthPlace', width:16 },
+  { header:'اللغة الأم', key:'motherTongue', width:12 },
+  { header:'فئة الدم', key:'bloodType', width:8 },
+  { header:'الديانة', key:'religion', width:10 },
+  { header:'هاتف الأب', key:'fatherPhone', width:16 },
+  { header:'ملاحظات', key:'notes', width:22 },
+  { header:'الاحتياجات الخاصة', key:'specialNeeds', width:16 },
+  { header:'لغة الدراسة', key:'studyLanguage', width:12 },
+  { header:'المستوى المعيشي', key:'livingStandard', width:16 },
+  { header:'منحة الرعاية', key:'socialGrant', width:12 },
+  { header:'الصف', key:'grade', width:18 },
+  { header:'الشعبة', key:'section', width:8 },
+  { header:'المحافظة', key:'governorate', width:14 },
+  { header:'القضاء/الناحية', key:'districtSub', width:16 },
+  { header:'المدينة/القرية', key:'city', width:16 },
+  { header:'الحي', key:'district', width:14 },
+  { header:'المحلة', key:'mahalla', width:12 },
+  { header:'زقاق', key:'alley', width:10 },
+  { header:'عنوان 1', key:'addressLine1', width:20 },
+  { header:'عنوان 2', key:'addressLine2', width:20 },
+  { header:'أقرب نقطة دالة', key:'landmark', width:22 },
+  { header:'البريد الإلكتروني', key:'email', width:20 },
+  { header:'تاريخ التسجيل', key:'createdAt', width:16 },
+];
+function mapStudentRow(t){
+  return ({
       studentFirstName: t.studentFirstName||'', fatherName: t.fatherName||'', grandfatherName: t.grandfatherName||'',
       fatherGrandfatherName: t.fatherGrandfatherName||'', lastName: t.lastName||'', motherName: t.motherName||'',
       motherFatherName: t.motherFatherName||'', motherGrandfatherName: t.motherGrandfatherName||'',
@@ -1595,7 +1633,14 @@ document.getElementById('exportStudents').addEventListener('click', async (e) =>
       alley: t.alley||'', addressLine1: t.addressLine1||'', addressLine2: t.addressLine2||'', landmark: t.landmark||'',
       email: t.email||'',
       createdAt: t.createdAt && t.createdAt.toDate ? t.createdAt.toDate().toLocaleDateString('ar-IQ') : ''
-    }), 'بيانات_الطلاب_اعدادية_ام_قصر', 'الطلاب');
+  });
+}
+
+document.getElementById('exportStudents').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.disabled = true; btn.textContent = 'جارِ التصدير...';
+  try{
+    await exportToExcel(allStudents, STUDENT_EXPORT_COLUMNS, mapStudentRow, 'بيانات_الطلاب_اعدادية_ام_قصر', 'الطلاب');
   }catch(err){
     alert('حدث خطأ أثناء التصدير: ' + err.message);
   }finally{
