@@ -358,6 +358,12 @@
           <button class="chip-btn violet" id="exportStudents">⬇ تصدير Excel</button>
           <button class="chip-btn violet" id="exportStudentsRosterPdf">🖨 قائمة PDF رسمية</button>
           <button class="chip-btn" id="toggleDupStudents">⚠ المكررات فقط</button>
+          <select class="chip-btn" id="dupMode" style="cursor:pointer;">
+            <option value="two">التكرار حسب: الاسم + اسم الأب</option>
+            <option value="three">التكرار حسب: الاسم الثلاثي</option>
+            <option value="full">التكرار حسب: الاسم الرباعي + الميلاد</option>
+            <option value="id">التكرار حسب: رقم الهوية</option>
+          </select>
           <button class="chip-btn" id="backupStudents">💾 نسخة احتياطية (JSON)</button>
         </div>
       </div>
@@ -968,15 +974,31 @@ bulkDeleteStudents.addEventListener('click', async () => {
 
 /* ---- كشف التكرار: نفس رقم الهوية أو نفس الاسم الكامل + تاريخ الميلاد ---- */
 let showDupOnly = false;
+function normAr(v){
+  return (v||'').toString()
+    .replace(/[\u064B-\u0652\u0640]/g,'')
+    .replace(/[أإآٱ]/g,'ا').replace(/ى/g,'ي').replace(/ة/g,'ه')
+    .replace(/\s+/g,' ').trim();
+}
 function studentDupKeys(t){
-  const keys = [];
-  const uni = (t.unifiedCardNumber||'').toString().trim();
-  const civ = (t.civilIdNumber||'').toString().trim();
-  if (uni) keys.push('id:' + uni);
-  if (civ) keys.push('id:' + civ);
-  const name = [t.studentFirstName, t.fatherName, t.grandfatherName, t.lastName].map(v => (v||'').toString().trim()).join(' ');
-  if (name.replace(/\s/g,'') && t.birthDate) keys.push('nm:' + name + '|' + t.birthDate);
-  return keys;
+  const mode = (document.getElementById('dupMode')||{}).value || 'two';
+  const f = normAr(t.studentFirstName), fa = normAr(t.fatherName),
+        gr = normAr(t.grandfatherName), la = normAr(t.lastName);
+  if (mode === 'id'){
+    const keys = [];
+    const uni = (t.unifiedCardNumber||'').toString().trim();
+    const civ = (t.civilIdNumber||'').toString().trim();
+    if (uni) keys.push('id:' + uni);
+    if (civ) keys.push('id:' + civ);
+    return keys;
+  }
+  if (mode === 'two')   return (f && fa) ? [f + ' ' + fa] : [];
+  if (mode === 'three') return (f && fa && gr) ? [f + ' ' + fa + ' ' + gr] : [];
+  return (f && fa && gr && t.birthDate) ? [[f,fa,gr,la].join(' ') + '|' + t.birthDate] : [];
+}
+function primaryDupKey(t){
+  const ks = studentDupKeys(t);
+  return ks.length ? ks[0] : '';
 }
 function computeDupMap(){
   const count = {};
@@ -1007,6 +1029,10 @@ function renderStudentsTable(){
   if (showDupOnly) list = list.filter(t => dupMap[t.id]);
 
   list = [...list].sort((a, b) => {
+    if (showDupOnly){
+      const ka = primaryDupKey(a), kb = primaryDupKey(b);
+      if (ka !== kb) return ka.localeCompare(kb, 'ar');
+    }
     const diff = getTime(a) - getTime(b);
     return sortStudents.value === 'oldest' ? diff : -diff;
   });
@@ -1021,8 +1047,13 @@ function renderStudentsTable(){
     return;
   }
 
-  studentsBody.innerHTML = list.map(t => `
-    <tr>
+  let prevKey = null;
+  studentsBody.innerHTML = list.map(t => {
+    const gk = showDupOnly ? primaryDupKey(t) : null;
+    const sep = (showDupOnly && prevKey !== null && gk !== prevKey) ? ' style="border-top:4px solid #c7b8f5;"' : '';
+    prevKey = gk;
+    return `
+    <tr${sep}>
       <td><input type="checkbox" class="row-check" data-id="${t.id}" ${selectedStudentIds.has(t.id) ? 'checked' : ''}></td>
       <td>${t.photo ? `<img class="thumb" src="${t.photo}">` : '-'}</td>
       <td>${esc([t.studentFirstName, t.fatherName, t.grandfatherName].filter(Boolean).join(' '))}${dupMap[t.id] ? ` <span title="يوجد ${dupMap[t.id]} سجلات بنفس الهوية/الاسم" style="background:#fff3cd;color:#8a6100;border-radius:8px;padding:1px 7px;font-size:11px;white-space:nowrap;">⚠ مكرر (${dupMap[t.id]})</span>` : ''}</td>
@@ -1038,7 +1069,7 @@ function renderStudentsTable(){
         </div>
       </td>
     </tr>
-  `).join('');
+  `;}).join('');
 
   studentsBody.querySelectorAll('.row-check').forEach(cb => {
     cb.addEventListener('change', () => {
@@ -1061,6 +1092,7 @@ document.getElementById('toggleDupStudents').addEventListener('click', () => {
   showDupOnly = !showDupOnly;
   renderStudentsTable();
 });
+document.getElementById('dupMode').addEventListener('change', renderStudentsTable);
 
 /* نسخة احتياطية كاملة (كل الحقول والصور) بصيغة JSON */
 document.getElementById('backupStudents').addEventListener('click', () => {
