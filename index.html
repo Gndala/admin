@@ -10,7 +10,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import {
-    getFirestore, collection, addDoc, getDocs, deleteDoc, updateDoc, doc, serverTimestamp, query, orderBy, where
+    getFirestore, collection, addDoc, setDoc, getDocs, getDoc, deleteDoc, updateDoc, doc, serverTimestamp, query, orderBy, where
   } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -25,7 +25,7 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
 
-  window.__fb = { db, collection, addDoc, getDocs, deleteDoc, updateDoc, doc, serverTimestamp, query, orderBy, where };
+  window.__fb = { db, collection, addDoc, setDoc, getDoc, getDocs, deleteDoc, updateDoc, doc, serverTimestamp, query, orderBy, where };
   window.dispatchEvent(new Event('firebase-ready'));
 </script>
 
@@ -364,6 +364,7 @@
             <option value="full">التكرار حسب: الاسم الرباعي + الميلاد</option>
             <option value="id">التكرار حسب: رقم الهوية</option>
           </select>
+          <button class="chip-btn" id="showAllStudents">🔄 عرض كل الطلاب (إلغاء الفلاتر)</button>
           <button class="chip-btn" id="toggleSortByName">🔤 عرض الكل مرتبين بالاسم</button>
           <button class="chip-btn violet" id="exportStudentsAllDup">⬇ Excel الكل مع المكررات</button>
           <button class="chip-btn" id="backupStudents">💾 نسخة احتياطية (JSON)</button>
@@ -574,10 +575,12 @@ async function loadTeachers(){
   teachersBody.innerHTML = '<tr class="empty-row"><td colspan="7">جارِ التحميل...</td></tr>';
   try{
     await fbReadyPromise;
-    const q = fb.query(fb.collection(fb.db, TEACHERS_COLLECTION), fb.orderBy('createdAt','desc'));
-    const snap = await fb.getDocs(q);
+    // نقرأ كل المستندات بدون orderBy حتى لا يُخفى أي سجل ينقصه حقل createdAt
+    const snap = await fb.getDocs(fb.collection(fb.db, TEACHERS_COLLECTION));
     allTeachers = [];
     snap.forEach(d => allTeachers.push({ id: d.id, ...d.data() }));
+    const _tt = x => (x.createdAt && x.createdAt.toMillis) ? x.createdAt.toMillis() : 0;
+    allTeachers.sort((a, b) => _tt(b) - _tt(a));
     renderTeachersStats();
     renderTeacherDistribution();
     renderTeachersTable();
@@ -861,10 +864,12 @@ async function loadStudents(){
   studentsBody.innerHTML = '<tr class="empty-row"><td colspan="7">جارِ التحميل...</td></tr>';
   try{
     await fbReadyPromise;
-    const q = fb.query(fb.collection(fb.db, STUDENTS_COLLECTION), fb.orderBy('createdAt','desc'));
-    const snap = await fb.getDocs(q);
+    // نقرأ كل المستندات بدون orderBy حتى لا يُخفى أي سجل ينقصه حقل createdAt
+    const snap = await fb.getDocs(fb.collection(fb.db, STUDENTS_COLLECTION));
     allStudents = [];
     snap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
+    const _t = x => (x.createdAt && x.createdAt.toMillis) ? x.createdAt.toMillis() : 0;
+    allStudents.sort((a, b) => _t(b) - _t(a));
     renderStudentsStats();
     renderDistribution();
     renderStudentsTable();
@@ -955,14 +960,30 @@ selectAllStudents.addEventListener('change', () => {
   updateStudentBulkUI();
 });
 
+/* قبل أي حذف لطالب: نسخ السجل إلى مجموعة students_trash للاسترجاع عند الخطأ */
+async function archiveStudentBeforeDelete(id){
+  try{
+    const ref = fb.doc(fb.db, STUDENTS_COLLECTION, id);
+    const snap = await fb.getDoc(ref);
+    if (snap.exists()){
+      await fb.setDoc(fb.doc(fb.db, 'students_trash', id), { ...snap.data(), deletedAt: fb.serverTimestamp(), originalId: id });
+    }
+    return true;
+  }catch(err){
+    console.error('archive failed', err);
+    return confirm('تعذّر حفظ نسخة احتياطية من السجل قبل حذفه (قد تمنعها صلاحيات قاعدة البيانات).\nهل تريد الحذف بدون نسخة احتياطية؟');
+  }
+}
+
 bulkDeleteStudents.addEventListener('click', async () => {
   if (selectedStudentIds.size === 0) return;
-  if (!confirm(`هل تريد حذف ${selectedStudentIds.size} سجل نهائياً؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+  if (!confirm(`هل تريد حذف ${selectedStudentIds.size} سجل؟ (تُحفظ نسخة منها في students_trash)`)) return;
   bulkDeleteStudents.disabled = true;
   bulkDeleteStudents.textContent = 'جارِ الحذف...';
   try{
     await fbReadyPromise;
     for (const id of selectedStudentIds){
+      if (!(await archiveStudentBeforeDelete(id))) continue;
       await fb.deleteDoc(fb.doc(fb.db, STUDENTS_COLLECTION, id));
     }
     selectedStudentIds.clear();
@@ -1098,6 +1119,12 @@ document.getElementById('toggleDupStudents').addEventListener('click', () => {
   renderStudentsTable();
 });
 document.getElementById('dupMode').addEventListener('change', renderStudentsTable);
+document.getElementById('showAllStudents').addEventListener('click', () => {
+  showDupOnly = false; sortAllByName = false; activeFilter = null;
+  searchStudents.value = '';
+  renderDistribution();
+  renderStudentsTable();
+});
 document.getElementById('toggleSortByName').addEventListener('click', () => {
   sortAllByName = !sortAllByName;
   if (sortAllByName) showDupOnly = false;
@@ -1225,6 +1252,7 @@ function bindRowActions(tbody, dataList, collectionName, reloadFn, editFields){
       if (!confirm('هل تريد حذف هذا السجل نهائياً؟ لا يمكن التراجع عن هذا الإجراء.')) return;
       try{
         await fbReadyPromise;
+        if (collectionName === STUDENTS_COLLECTION && !(await archiveStudentBeforeDelete(btn.dataset.id))) return;
         await fb.deleteDoc(fb.doc(fb.db, collectionName, btn.dataset.id));
         reloadFn();
       }catch(err){
