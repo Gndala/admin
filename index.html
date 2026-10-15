@@ -365,6 +365,17 @@
             <option value="id">التكرار حسب: رقم الهوية</option>
           </select>
           <button class="chip-btn" id="showAllStudents">🔄 عرض كل الطلاب (إلغاء الفلاتر)</button>
+          <select class="chip-btn" id="addrField" style="cursor:pointer;">
+            <option value="city">العنوان حسب: المدينة / القرية</option>
+            <option value="district">العنوان حسب: الحي</option>
+            <option value="mahalla">العنوان حسب: المحلة</option>
+            <option value="landmark">العنوان حسب: أقرب نقطة دالة</option>
+            <option value="districtSub">العنوان حسب: القضاء / الناحية</option>
+            <option value="governorate">العنوان حسب: المحافظة</option>
+          </select>
+          <select class="chip-btn" id="addrValue" style="cursor:pointer;max-width:100%;"><option value="__all__">كل العناوين</option></select>
+          <button class="chip-btn" id="toggleSortByAddress">📍 فرز حسب العنوان</button>
+          <button class="chip-btn violet" id="exportStudentsByAddress">⬇ Excel حسب العنوان</button>
           <button class="chip-btn" id="toggleSortByName">🔤 عرض الكل مرتبين بالاسم</button>
           <button class="chip-btn violet" id="exportStudentsAllDup">⬇ Excel الكل مع المكررات</button>
           <button class="chip-btn" id="backupStudents">💾 نسخة احتياطية (JSON)</button>
@@ -998,6 +1009,30 @@ bulkDeleteStudents.addEventListener('click', async () => {
 /* ---- كشف التكرار: نفس رقم الهوية أو نفس الاسم الكامل + تاريخ الميلاد ---- */
 let showDupOnly = false;
 let sortAllByName = false;
+let sortByAddress = false;
+let addrSelected = '__all__';
+function addrFieldKey(){ return (document.getElementById('addrField')||{}).value || 'city'; }
+function addrNorm(t){ return normAr(t[addrFieldKey()]); }
+function addrSortKey(t){
+  // الحقل المختار أولاً ثم الحي ثم المحلة ثم الزقاق ليكون الفرز متسلسلاً
+  return [addrNorm(t), normAr(t.district), normAr(t.mahalla), normAr(t.alley)].join('|');
+}
+function refreshAddrValues(){
+  const sel = document.getElementById('addrValue');
+  if (!sel) return;
+  const groups = new Map();
+  allStudents.forEach(t => {
+    const k = addrNorm(t);
+    const label = (t[addrFieldKey()]||'').toString().trim() || '— بدون عنوان —';
+    if (!groups.has(k)) groups.set(k, { label, n: 0 });
+    groups.get(k).n++;
+  });
+  const items = [...groups.entries()].sort((a,b) => a[1].label.localeCompare(b[1].label, 'ar'));
+  sel.innerHTML = '<option value="__all__">كل العناوين (' + allStudents.length + ')</option>' +
+    items.map(([k, g]) => '<option value="' + k.replace(/"/g,'&quot;') + '">' + esc(g.label) + ' (' + g.n + ')</option>').join('');
+  sel.value = groups.has(addrSelected) ? addrSelected : '__all__';
+  addrSelected = sel.value;
+}
 function normAr(v){
   return (v||'').toString()
     .replace(/[\u064B-\u0652\u0640]/g,'')
@@ -1037,6 +1072,9 @@ function computeDupMap(){
 
 function renderStudentsTable(){
   const dupMap = computeDupMap();
+  refreshAddrValues();
+  const addrBtn = document.getElementById('toggleSortByAddress');
+  if (addrBtn) addrBtn.textContent = (sortByAddress ? '✔ ' : '📍 ') + 'فرز حسب العنوان';
   const sortBtn = document.getElementById('toggleSortByName');
   if (sortBtn) sortBtn.textContent = (sortAllByName ? '✔ ' : '🔤 ') + 'عرض الكل مرتبين بالاسم';
   const dupBtn = document.getElementById('toggleDupStudents');
@@ -1053,8 +1091,13 @@ function renderStudentsTable(){
   }
 
   if (showDupOnly) list = list.filter(t => dupMap[t.id]);
+  if (addrSelected !== '__all__') list = list.filter(t => addrNorm(t) === addrSelected);
 
   list = [...list].sort((a, b) => {
+    if (sortByAddress){
+      const aa = addrSortKey(a), ab = addrSortKey(b);
+      if (aa !== ab) return aa.localeCompare(ab, 'ar');
+    }
     if (showDupOnly || sortAllByName){
       const ka = primaryDupKey(a) || normAr([a.studentFirstName,a.fatherName,a.grandfatherName].join(' ')), kb = primaryDupKey(b) || normAr([b.studentFirstName,b.fatherName,b.grandfatherName].join(' '));
       if (ka !== kb) return ka.localeCompare(kb, 'ar');
@@ -1075,8 +1118,8 @@ function renderStudentsTable(){
 
   let prevKey = null;
   studentsBody.innerHTML = list.map(t => {
-    const gk = (showDupOnly || sortAllByName) ? (primaryDupKey(t) || ('u' + t.id)) : null;
-    const sep = ((showDupOnly || sortAllByName) && prevKey !== null && gk !== prevKey) ? ' style="border-top:4px solid #c7b8f5;"' : '';
+    const gk = sortByAddress ? addrNorm(t) : ((showDupOnly || sortAllByName) ? (primaryDupKey(t) || ('u' + t.id)) : null);
+    const sep = ((showDupOnly || sortAllByName || sortByAddress) && prevKey !== null && gk !== prevKey) ? ' style="border-top:4px solid #c7b8f5;"' : '';
     prevKey = gk;
     return `
     <tr${sep}>
@@ -1119,8 +1162,80 @@ document.getElementById('toggleDupStudents').addEventListener('click', () => {
   renderStudentsTable();
 });
 document.getElementById('dupMode').addEventListener('change', renderStudentsTable);
+document.getElementById('addrField').addEventListener('change', () => { addrSelected = '__all__'; renderStudentsTable(); });
+document.getElementById('addrValue').addEventListener('change', (e) => { addrSelected = e.target.value; renderStudentsTable(); });
+document.getElementById('toggleSortByAddress').addEventListener('click', () => {
+  sortByAddress = !sortByAddress;
+  if (sortByAddress){ showDupOnly = false; sortAllByName = false; }
+  renderStudentsTable();
+});
+
+/* Excel حسب العنوان: ورقة "الكل" مرتبة بالعنوان (مع الصور) + ورقة مستقلة لكل عنوان (بدون صور لتخفيف الحجم) */
+document.getElementById('exportStudentsByAddress').addEventListener('click', async (e) => {
+  const btn = e.target;
+  if (!allStudents.length){ alert('لا توجد بيانات لتصديرها'); return; }
+  btn.disabled = true; btn.textContent = 'جارِ التصدير...';
+  try{
+    const field = addrFieldKey();
+    let list = [...allStudents];
+    if (addrSelected !== '__all__') list = list.filter(t => addrNorm(t) === addrSelected);
+    list.sort((a, b) => addrSortKey(a).localeCompare(addrSortKey(b), 'ar'));
+
+    const wb = new ExcelJS.Workbook();
+    const fill = (sheet, rows, withPhotos) => {
+      const cols = withPhotos ? STUDENT_EXPORT_COLUMNS : STUDENT_EXPORT_COLUMNS.slice(1);
+      sheet.columns = cols;
+      sheet.getRow(1).font = { bold:true };
+      sheet.getRow(1).alignment = { vertical:'middle', horizontal:'center' };
+      rows.forEach(t => {
+        const row = sheet.addRow(mapStudentRow(t));
+        row.alignment = { vertical:'middle', horizontal:'center', wrapText:true };
+        if (withPhotos){
+          row.height = 58;
+          const m = (t.photo && typeof t.photo === 'string') ? t.photo.match(/^data:image\/(png|jpe?g);base64,/) : null;
+          if (m){
+            const ext = m[1] === 'jpg' ? 'jpeg' : m[1];
+            const imgId = wb.addImage({ base64: t.photo, extension: ext });
+            sheet.addImage(imgId, { tl: { col: 0.15, row: (row.number - 1) + 0.1 }, ext: { width: 52, height: 52 } });
+          }
+        }
+      });
+    };
+    fill(wb.addWorksheet('الكل مرتب بالعنوان', { views:[{ rightToLeft:true }] }), list, true);
+
+    if (addrSelected === '__all__'){
+      const groups = new Map();
+      list.forEach(t => {
+        const k = addrNorm(t);
+        if (!groups.has(k)) groups.set(k, { label: (t[field]||'').toString().trim() || 'بدون عنوان', rows: [] });
+        groups.get(k).rows.push(t);
+      });
+      const used = new Set(['الكل مرتب بالعنوان']);
+      for (const g of groups.values()){
+        let name = g.label.replace(/[\[\]:*?\/\\]/g, ' ').trim().slice(0, 24) || 'بدون عنوان';
+        name = name + ' (' + g.rows.length + ')';
+        let base = name, i = 2;
+        while (used.has(name)) name = base.slice(0, 27) + '_' + (i++);
+        used.add(name);
+        fill(wb.addWorksheet(name, { views:[{ rightToLeft:true }] }), g.rows, false);
+      }
+    }
+
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'الطلاب_حسب_العنوان_' + new Date().toISOString().slice(0,10) + '.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }catch(err){
+    alert('حدث خطأ أثناء التصدير: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = '⬇ Excel حسب العنوان';
+  }
+});
 document.getElementById('showAllStudents').addEventListener('click', () => {
-  showDupOnly = false; sortAllByName = false; activeFilter = null;
+  showDupOnly = false; sortAllByName = false; sortByAddress = false; addrSelected = '__all__'; activeFilter = null;
   searchStudents.value = '';
   renderDistribution();
   renderStudentsTable();
